@@ -1,4 +1,4 @@
-const { put, get, list, del } = require('@vercel/blob');
+const { put, list, del } = require('@vercel/blob');
 
 const TZ = 'America/Recife';
 
@@ -53,26 +53,21 @@ async function listAll(prefix) {
   let cursor;
   let all = [];
   do {
-    const r = await list({ prefix, cursor, limit: 1000, access: 'private' });
+    const r = await list({ prefix, cursor, limit: 1000 });
     all = all.concat(r.blobs);
     cursor = r.hasMore ? r.cursor : null;
   } while (cursor);
   return all;
 }
 
-async function readBlobJson(pathname) {
-  const blob = await get(pathname, { access: 'private' });
-  if (!blob || blob.statusCode !== 200) return null;
-  return JSON.parse(await new Response(blob.stream).text());
-}
-
 async function getCfg() {
-  const { blobs } = await list({ prefix: 'config.json', access: 'private' });
-  if (!blobs.some((x) => x.pathname === 'config.json')) return DEF;
+  const { blobs } = await list({ prefix: 'config.json' });
+  const b = blobs.find((x) => x.pathname === 'config.json');
+  if (!b) return DEF;
   try {
-    return Object.assign({}, DEF, await readBlobJson('config.json'));
+    const r = await fetch(b.url + '?v=' + new Date(b.uploadedAt).getTime());
+    return Object.assign({}, DEF, await r.json());
   } catch (e) {
-    console.error('Falha ao ler configuração privada do Blob:', e);
     return DEF;
   }
 }
@@ -127,7 +122,7 @@ async function book(req, res) {
   // Reserva atômica: se o arquivo já existe, o put falha e o horário já é de outra pessoa
   try {
     await put('slots/' + id + '.json', '{"t":1}', {
-      access: 'private', addRandomSuffix: false, allowOverwrite: false, contentType: 'application/json',
+      access: 'public', addRandomSuffix: false, allowOverwrite: false, contentType: 'application/json',
     });
   } catch (e) {
     if (/exist/i.test(String(e.message || ''))) return res.status(409).json({ e: 'taken' });
@@ -136,7 +131,7 @@ async function book(req, res) {
   await put(
     'bookings/' + id + '.json',
     JSON.stringify({ id, date, time, name, phone, services: sv.map((s) => s.name), at: now.toISOString() }),
-    { access: 'private', addRandomSuffix: true, contentType: 'application/json' }
+    { access: 'public', addRandomSuffix: true, contentType: 'application/json' }
   );
   return res.json({ ok: 1 });
 }
@@ -159,7 +154,7 @@ module.exports = async (req, res) => {
     if (r === 'bookings') {
       if (!isAgenda(req)) return res.status(401).json({ e: 'auth' });
       const a = await listAll('bookings/');
-      const rows = await Promise.all(a.map((b) => readBlobJson(b.pathname).catch(() => null)));
+      const rows = await Promise.all(a.map((b) => fetch(b.url).then((x) => x.json()).catch(() => null)));
       return res.json(rows.filter(Boolean).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time)));
     }
 
@@ -169,15 +164,15 @@ module.exports = async (req, res) => {
       if (id.length < 10) return res.status(400).json({ e: 'id' });
       const a = await listAll('bookings/' + id);
       const s = await listAll('slots/' + id + '.json');
-      const paths = a.concat(s).map((b) => b.pathname);
-      if (paths.length) await del(paths, { access: 'private' });
+      const urls = a.concat(s).map((b) => b.url);
+      if (urls.length) await del(urls);
       return res.json({ ok: 1 });
     }
 
     if (r === 'save' && req.method === 'POST') {
       if (!isAdmin(req)) return res.status(401).json({ e: 'auth' });
       await put('config.json', JSON.stringify(clean(req.body || {})), {
-        access: 'private', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', cacheControlMaxAge: 60,
+        access: 'public', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', cacheControlMaxAge: 60,
       });
       return res.json({ ok: 1 });
     }
@@ -189,7 +184,7 @@ module.exports = async (req, res) => {
       if (!d.startsWith(pre)) return res.status(400).json({ e: 'formato' });
       const buf = Buffer.from(d.slice(pre.length), 'base64');
       if (buf.length > 3500000) return res.status(413).json({ e: 'grande' });
-      const p = await put('photos/foto.jpg', buf, { access: 'private', addRandomSuffix: true, contentType: 'image/jpeg' });
+      const p = await put('photos/foto.jpg', buf, { access: 'public', addRandomSuffix: true, contentType: 'image/jpeg' });
       return res.json({ url: p.url });
     }
 
