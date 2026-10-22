@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Marcações — Roberto Souza Hair</title>
+<style>
+:root{--bg:#fbf6f2;--s:#fff;--tx:#3b2f2e;--mu:#7a6a66;--ln:#eaddd5;--ac:#a8645f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,-apple-system,sans-serif;padding:20px 16px 60px}
+main{max-width:720px;margin:auto}
+h1{font:600 2rem Georgia,serif;margin:0 0 4px}
+.mu{color:var(--mu);font-size:.9rem}
+h2{font-size:1rem;text-transform:capitalize;margin:26px 0 10px}
+.b{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;align-items:center;background:var(--s);border:1px solid var(--ln);border-radius:16px;padding:14px 16px;margin-bottom:10px}
+.t{font:600 1.3rem Georgia,serif;color:var(--ac);grid-row:span 3}
+.n{font-weight:600}
+.sv{color:var(--mu);font-size:.9rem}
+.ph a{color:var(--ac);margin-right:12px;font-size:.92rem}
+.x{justify-self:start;border:1px solid var(--ln);background:#fff;color:var(--mu);border-radius:999px;padding:5px 12px;font:inherit;font-size:.82rem;cursor:pointer}
+.tg{margin-top:20px;background:none;border:0;color:var(--ac);font:inherit;cursor:pointer;text-decoration:underline}
+</style>
+</head>
+<body>
+<main>
+  <h1>Marcações</h1>
+  <p class="mu" id="info">Carregando…</p>
+  <div id="app"></div>
+  <button class="tg" id="tg">Mostrar também os dias que já passaram</button>
+</main>
+
+<script>
+(function () {
+  var $ = function (i) { return document.getElementById(i); };
+  var K = new URLSearchParams(location.search).get('k') || '';
+  var old = false, rows = [];
+  var esc = function (s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;');
+  };
+  function fd(k) {
+    var p = k.split('-');
+    return new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+  function draw() {
+    var today = new Date().toLocaleDateString('en-CA');
+    var l = rows.filter(function (r) { return old || r.date >= today; }), by = {};
+    l.forEach(function (r) { (by[r.date] = by[r.date] || []).push(r); });
+    var ds = Object.keys(by).sort();
+    $('info').textContent = l.length ? l.length + ' agendamento(s)' : 'Nenhum agendamento por enquanto.';
+    $('app').innerHTML = ds.map(function (d) {
+      return '<h2>' + fd(d) + '</h2>' + by[d].map(function (r) {
+        var dg = r.phone.replace(/[^0-9]/g, ''), wa = dg.length <= 11 ? '55' + dg : dg;
+        return "<div class='b'><div class='t'>" + r.time + "</div><div class='n'>" + esc(r.name) + '</div>' +
+          "<div class='ph'><a href='tel:" + dg + "'>" + esc(r.phone) + "</a><a href='https://wa.me/" + wa + "' target='_blank' rel='noopener'>WhatsApp</a></div>" +
+          "<div class='sv'>" + esc(r.services.join(' + ')) + '</div>' +
+          "<button class='x' data-id='" + r.id + "' data-n='" + esc(r.name) + "'>Cancelar horário</button></div>";
+      }).join('');
+    }).join('');
+  }
+  function load() {
+    fetch('/api/app?r=bookings&k=' + encodeURIComponent(K)).then(function (x) {
+      if (x.status === 401) {
+        $('info').textContent = 'Link inválido. Use o link completo das marcações.';
+        $('tg').style.display = 'none';
+        return null;
+      }
+      return x.json();
+    }).then(function (r) { if (r) { rows = r; draw(); } }).catch(function () {});
+  }
+  $('tg').onclick = function () {
+    old = !old;
+    $('tg').textContent = old ? 'Mostrar só os próximos' : 'Mostrar também os dias que já passaram';
+    draw();
+  };
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('.x');
+    if (!b) return;
+    if (!confirm('Cancelar o horário de ' + b.dataset.n + '? O horário volta a ficar livre.')) return;
+    fetch('/api/app?r=cancel&k=' + encodeURIComponent(K), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: b.dataset.id }),
+    }).then(load);
+  });
+  load();
+  setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>

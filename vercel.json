@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/painel",
+      "destination": "/painel.html"
+    },
+    {
+      "source": "/agenda",
+      "destination": "/agenda.html"
+    }
+  ]
+}

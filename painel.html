@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Painel — Roberto Souza Hair</title>
+<style>
+:root{--bg:#fbf6f2;--s:#fff;--tx:#3b2f2e;--mu:#7a6a66;--ln:#eaddd5;--ac:#a8645f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,-apple-system,sans-serif;padding:20px 16px 120px}
+main{max-width:780px;margin:auto}
+h1{font:600 2rem Georgia,serif;margin:0 0 4px}
+h2{font-size:1.1rem;margin:0 0 14px}
+.mu{color:var(--mu);font-size:.9rem;margin:0 0 12px}
+.c{background:var(--s);border:1px solid var(--ln);border-radius:18px;padding:20px;margin:16px 0}
+label{display:grid;gap:4px;font-size:.82rem;color:var(--mu)}
+input,select{font:inherit;color:var(--tx);border:1px solid var(--ln);border-radius:10px;padding:10px;width:100%;background:#fff}
+.g{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin-bottom:12px}
+.dr{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;padding:10px 0;border-top:1px solid var(--ln)}
+.ck{display:flex;align-items:center;gap:8px;min-width:120px;font-size:1rem;color:var(--tx)}
+.ck input{width:auto}
+.ti{display:flex;flex-wrap:wrap;gap:8px;flex:1}
+.ti label{flex:1;min-width:92px}
+.bl{display:flex;gap:10px;margin-bottom:12px}
+.chs{display:flex;flex-wrap:wrap;gap:8px}
+.chp{background:var(--bg);border:1px solid var(--ln);border-radius:999px;padding:4px 6px 4px 12px;font-size:.9rem}
+.chp button{border:0;background:none;cursor:pointer;color:var(--mu)}
+.it{border-top:1px solid var(--ln);padding:14px 0;display:grid;gap:12px}
+.pic{display:flex;gap:12px;align-items:center}
+.th{width:72px;height:90px;border-radius:12px;background:#eadbd3 center/cover;flex:none;border:1px solid var(--ln)}
+.btn{display:inline-block;font:600 .92rem system-ui;background:var(--ac);color:#fff;border:0;border-radius:999px;padding:11px 20px;cursor:pointer}
+.btn.s{padding:8px 14px;font-size:.85rem}
+.btn.g{background:#fff;color:var(--ac);border:1px solid var(--ac)}
+.bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--ln);padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));display:flex;gap:14px;align-items:center;justify-content:center}
+#msg{font-size:.9rem;color:var(--mu)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Painel de edição</h1>
+  <p class="mu">Mude serviços, fotos, dias e horários. Depois toque em Salvar.</p>
+  <div id="app">Carregando…</div>
+</main>
+<div class="bar"><span id="msg"></span><button class="btn" id="save">Salvar alterações</button></div>
+
+<script>
+(function () {
+  var $ = function (i) { return document.getElementById(i); };
+  var K = new URLSearchParams(location.search).get('k') || '';
+  var C = null, Q = String.fromCharCode(39);
+  var DAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+  var esc = function (s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;');
+  };
+  var api = function (r, b) {
+    return fetch('/api/app?r=' + r + '&k=' + encodeURIComponent(K),
+      b ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) } : {})
+      .then(function (x) { return x.json().then(function (j) { return { s: x.status, j: j }; }); });
+  };
+  function msg(t) { $('msg').textContent = t; }
+  function getp(p) { return p.split('.').reduce(function (o, k) { return o[k]; }, C); }
+  function setp(p, v) {
+    var a = p.split('.'), o = C;
+    for (var i = 0; i < a.length - 1; i++) o = o[a[i]];
+    o[a[a.length - 1]] = v;
+  }
+  function inp(p, l, t) {
+    var v = getp(p);
+    return "<label>" + l + "<input type='" + (t || 'text') + "' data-p='" + p + "' value='" + esc(v == null ? '' : v) + "'></label>";
+  }
+  function pic(p, l) {
+    var u = getp(p);
+    return "<div class='pic'><div class='th' style='background-image:url(" + Q + u + Q + ")'></div><div><b>" + l + "</b><br>" +
+      "<label class='btn s' style='display:inline-block;color:#fff'>" + (u ? 'Trocar foto' : 'Enviar foto') +
+      "<input type='file' accept='image/*' data-up='" + p + "' hidden></label> " +
+      (u ? "<button class='btn s g' data-rm='" + p + "'>Remover</button>" : '') + '</div></div>';
+  }
+
+  function render() {
+    var h = "<div class='c'><h2>Dados do salão</h2><div class='g'>" +
+      inp('name', 'Nome') + inp('whatsapp', 'WhatsApp (55 + DDD + número)') + inp('address', 'Endereço') +
+      "<label>Intervalo entre horários<select data-p='step' data-n='1'><option value='30'" + (C.step == 30 ? ' selected' : '') +
+      ">30 minutos</option><option value='60'" + (C.step == 60 ? ' selected' : '') + '>1 hora</option></select></label></div></div>';
+
+    h += "<div class='c'><h2>Dias e horários de atendimento</h2><p class='mu'>Marque os dias em que atende. Deixe a tarde em branco se não atende nesse período.</p>" +
+      C.week.map(function (w, i) {
+        return "<div class='dr'><label class='ck'><input type='checkbox' data-p='week." + i + ".open'" + (w.open ? ' checked' : '') + '>' + DAYS[i] + '</label>' +
+          "<span class='ti'>" + inp('week.' + i + '.m1', 'Manhã das', 'time') + inp('week.' + i + '.m2', 'até', 'time') +
+          inp('week.' + i + '.t1', 'Tarde das', 'time') + inp('week.' + i + '.t2', 'até', 'time') + '</span></div>';
+      }).join('') + '</div>';
+
+    h += "<div class='c'><h2>Datas bloqueadas</h2><p class='mu'>Feriados, folgas e viagens. Nesses dias ninguém consegue agendar.</p>" +
+      "<div class='bl'><input type='date' id='nd'><button class='btn s' data-add='bl'>Bloquear</button></div><div class='chs'>" +
+      C.blocked.slice().sort().map(function (d) {
+        return "<span class='chp'>" + d.split('-').reverse().join('/') + " <button data-rmb='" + d + "'>✕</button></span>";
+      }).join('') + '</div></div>';
+
+    h += "<div class='c'><h2>Fotos principais</h2><div class='it'>" +
+      pic('hero', 'Primeira tela (foto do Roberto)') + pic('about', 'Seção Sobre') + '</div></div>';
+
+    h += "<div class='c'><h2>Serviços</h2>" + C.services.map(function (s, i) {
+      return "<div class='it'><div class='g'>" + inp('services.' + i + '.name', 'Nome') + inp('services.' + i + '.desc', 'Descrição curta') + '</div>' +
+        pic('services.' + i + '.photo', 'Foto do serviço') +
+        "<div><button class='btn s g' data-rms='" + i + "'>Excluir serviço</button></div></div>";
+    }).join('') + "<button class='btn' data-add='sv'>+ Adicionar serviço</button></div>";
+
+    h += "<div class='c'><h2>Galeria de trabalhos</h2>" + C.gallery.map(function (g, i) {
+      return "<div class='it'>" + inp('gallery.' + i + '.label', 'Legenda') + pic('gallery.' + i + '.photo', 'Foto') +
+        "<div><button class='btn s g' data-rmg='" + i + "'>Excluir</button></div></div>";
+    }).join('') + "<button class='btn' data-add='gl'>+ Adicionar foto</button></div>";
+
+    $('app').innerHTML = h;
+  }
+
+  document.addEventListener('input', function (e) {
+    var t = e.target, p = t.dataset.p;
+    if (!p) return;
+    setp(p, t.type === 'checkbox' ? t.checked : (t.dataset.n ? Number(t.value) : t.value));
+  });
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.dataset.up && t.files[0]) upload(t.dataset.up, t.files[0]);
+  });
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('button');
+    if (!t || !C) return;
+    var d = t.dataset;
+    if (d.rm) { setp(d.rm, ''); render(); }
+    else if (d.rms) { C.services.splice(+d.rms, 1); render(); }
+    else if (d.rmg) { C.gallery.splice(+d.rmg, 1); render(); }
+    else if (d.rmb) { C.blocked = C.blocked.filter(function (x) { return x !== d.rmb; }); render(); }
+    else if (d.add === 'sv') { C.services.push({ id: 's' + Date.now(), name: 'Novo serviço', desc: '', photo: '' }); render(); }
+    else if (d.add === 'gl') { C.gallery.push({ label: 'Nova foto', photo: '' }); render(); }
+    else if (d.add === 'bl') {
+      var v = $('nd').value;
+      if (v && C.blocked.indexOf(v) < 0) { C.blocked.push(v); render(); }
+    }
+  });
+
+  // Reduz a foto no próprio aparelho antes de enviar
+  function shrink(f) {
+    return new Promise(function (ok, no) {
+      var im = new Image();
+      im.onload = function () {
+        var s = Math.min(1, 1100 / Math.max(im.width, im.height)), c = document.createElement('canvas');
+        c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        ok(c.toDataURL('image/jpeg', 0.82));
+      };
+      im.onerror = no;
+      im.src = URL.createObjectURL(f);
+    });
+  }
+  function upload(p, f) {
+    msg('Enviando foto…');
+    shrink(f).then(function (d) { return api('upload', { data: d }); }).then(function (r) {
+      if (r.s === 200) { setp(p, r.j.url); render(); msg('Foto enviada. Toque em Salvar.'); }
+      else msg('Falha ao enviar a foto.');
+    }).catch(function () { msg('Falha ao enviar a foto.'); });
+  }
+
+  $('save').onclick = function () {
+    if (!C) return;
+    msg('Salvando…');
+    api('save', C).then(function (r) {
+      msg(r.s === 200 ? 'Salvo. O site já foi atualizado.' : 'Não foi possível salvar.');
+    }).catch(function () { msg('Sem conexão.'); });
+  };
+
+  api('whoami').then(function (r) {
+    if (!r.j.admin) {
+      $('app').innerHTML = "<div class='c'>Link inválido. Use o link completo do painel.</div>";
+      $('save').style.display = 'none';
+      return;
+    }
+    return api('config').then(function (r) { C = r.j; render(); });
+  });
+})();
+</script>
+</body>
+</html>
