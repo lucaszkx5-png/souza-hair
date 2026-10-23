@@ -1,4 +1,4 @@
-const { put, list, del } = require('@vercel/blob');
+const { put, list, del, get } = require('@vercel/blob');
 
 const TZ = 'America/Recife';
 
@@ -53,7 +53,7 @@ async function listAll(prefix) {
   let cursor;
   let all = [];
   do {
-    const r = await list({ prefix, cursor, limit: 1000 });
+    const r = await list({ prefix, cursor, limit: 1000, access: 'private' });
     all = all.concat(r.blobs);
     cursor = r.hasMore ? r.cursor : null;
   } while (cursor);
@@ -61,14 +61,13 @@ async function listAll(prefix) {
 }
 
 async function getCfg() {
-  const { blobs } = await list({ prefix: 'config.json' });
-  const b = blobs.find((x) => x.pathname === 'config.json');
-  if (!b) return DEF;
   try {
-    const r = await fetch(b.url + '?v=' + new Date(b.uploadedAt).getTime());
-    return Object.assign({}, DEF, await r.json());
+    const b = await get('config.json', { access: 'private' });
+    if (!b || b.statusCode !== 200) return DEF;
+    return Object.assign({}, DEF, JSON.parse(await new Response(b.stream).text()));
   } catch (e) {
-    return DEF;
+    if (/not found|does not exist/i.test(String(e.message || e))) return DEF;
+    throw e;
   }
 }
 
@@ -122,7 +121,7 @@ async function book(req, res) {
   // Reserva atômica: se o arquivo já existe, o put falha e o horário já é de outra pessoa
   try {
     await put('slots/' + id + '.json', '{"t":1}', {
-      access: 'public', addRandomSuffix: false, allowOverwrite: false, contentType: 'application/json',
+      access: 'private', addRandomSuffix: false, allowOverwrite: false, contentType: 'application/json',
     });
   } catch (e) {
     if (/exist/i.test(String(e.message || ''))) return res.status(409).json({ e: 'taken' });
@@ -131,7 +130,7 @@ async function book(req, res) {
   await put(
     'bookings/' + id + '.json',
     JSON.stringify({ id, date, time, name, phone, services: sv.map((s) => s.name), at: now.toISOString() }),
-    { access: 'public', addRandomSuffix: true, contentType: 'application/json' }
+    { access: 'private', addRandomSuffix: true, contentType: 'application/json' }
   );
   return res.json({ ok: 1 });
 }
@@ -140,6 +139,18 @@ module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const r = req.query.r;
   try {
+    if (r === 'photo') {
+      const pathname = String(req.query.pathname || '');
+      if (!/^photos\\/[A-Za-z0-9._-]+$/.test(pathname)) return res.status(400).send('arquivo inválido');
+      const blob = await get(pathname, { access: 'private' });
+      if (!blob || blob.statusCode !== 200) return res.status(404).send('não encontrado');
+      res.setHeader('Content-Type', blob.blob.contentType || 'application/octet-stream');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      const { Readable } = require('node:stream');
+      return Readable.fromWeb(blob.stream).pipe(res);
+    }
+
     if (r === 'config') return res.json(await getCfg());
 
     if (r === 'slots') {
@@ -154,7 +165,7 @@ module.exports = async (req, res) => {
     if (r === 'bookings') {
       if (!isAgenda(req)) return res.status(401).json({ e: 'auth' });
       const a = await listAll('bookings/');
-      const rows = await Promise.all(a.map((b) => fetch(b.url).then((x) => x.json()).catch(() => null)));
+      const rows = await Promise.all(a.map(async (b) => { try { const x = await get(b.pathname, { access: 'private' }); return x && x.statusCode === 200 ? JSON.parse(await new Response(x.stream).text()) : null; } catch (_) { return null; } }));
       return res.json(rows.filter(Boolean).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time)));
     }
 
@@ -165,14 +176,14 @@ module.exports = async (req, res) => {
       const a = await listAll('bookings/' + id);
       const s = await listAll('slots/' + id + '.json');
       const urls = a.concat(s).map((b) => b.url);
-      if (urls.length) await del(urls);
+      if (urls.length) await del(urls, { access: 'private' });
       return res.json({ ok: 1 });
     }
 
     if (r === 'save' && req.method === 'POST') {
       if (!isAdmin(req)) return res.status(401).json({ e: 'auth' });
       await put('config.json', JSON.stringify(clean(req.body || {})), {
-        access: 'public', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', cacheControlMaxAge: 60,
+        access: 'private', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', cacheControlMaxAge: 60,
       });
       return res.json({ ok: 1 });
     }
@@ -184,8 +195,8 @@ module.exports = async (req, res) => {
       if (!d.startsWith(pre)) return res.status(400).json({ e: 'formato' });
       const buf = Buffer.from(d.slice(pre.length), 'base64');
       if (buf.length > 3500000) return res.status(413).json({ e: 'grande' });
-      const p = await put('photos/foto.jpg', buf, { access: 'public', addRandomSuffix: true, contentType: 'image/jpeg' });
-      return res.json({ url: p.url });
+      const p = await put('photos/foto.jpg', buf, { access: 'private', addRandomSuffix: true, contentType: 'image/jpeg' });
+      return res.json({ url: '/api/app?r=photo&pathname=' + encodeURIComponent(p.pathname) });
     }
 
     return res.status(404).json({ e: 'rota' });
