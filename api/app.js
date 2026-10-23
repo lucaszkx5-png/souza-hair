@@ -141,7 +141,7 @@ module.exports = async (req, res) => {
   try {
     if (r === 'photo') {
       const pathname = String(req.query.pathname || '');
-      if (!/^photos\\/[A-Za-z0-9._-]+$/.test(pathname)) return res.status(400).send('arquivo inválido');
+      if (!/^photos\/[A-Za-z0-9._-]+$/.test(pathname)) return res.status(400).send('arquivo inválido');
       const blob = await get(pathname, { access: 'private' });
       if (!blob || blob.statusCode !== 200) return res.status(404).send('não encontrado');
       res.setHeader('Content-Type', blob.blob.contentType || 'application/octet-stream');
