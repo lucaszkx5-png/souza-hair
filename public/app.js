@@ -17,7 +17,7 @@
 
   const fallbackPhoto = 'linear-gradient(145deg,#ead6cf,#cfa79f)';
   const photoLayer = (path, overlay) => {
-    const safe = typeof path === 'string' && /^\/[a-zA-Z0-9/_-]+\.(jpg|jpeg|png|webp)$/i.test(path);
+    const safe = typeof path === 'string' && (/^\/[a-zA-Z0-9/_-]+\.(jpg|jpeg|png|webp)$/i.test(path) || /^\/api\/app\?r=photo&pathname=photos%2F[A-Za-z0-9._-]+$/i.test(path));
     return safe ? overlay + ',url("' + path + '")' : fallbackPhoto;
   };
 
