@@ -1,0 +1,54 @@
+name: Install gallery photos
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/extract-gallery-photos.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  install-photos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Extract gallery images and remove uploaded ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip_path="$(find . -maxdepth 3 -type f -iname 'img 2.zip' -print -quit)"
+          if [ -z "$zip_path" ]; then
+            echo "Could not find uploaded file named img 2.zip"
+            find . -maxdepth 3 -type f -iname '*.zip' -print
+            exit 1
+          fi
+          tmp="$(mktemp -d)"
+          unzip -q "$zip_path" -d "$tmp"
+          mkdir -p public/img
+          for n in 1 2 3 4 5 6 7 8; do
+            source_file="$(find "$tmp" -type f -iname "p${n}.jpg" -print -quit)"
+            if [ -z "$source_file" ]; then
+              echo "Missing p${n}.jpg in uploaded ZIP"
+              exit 1
+            fi
+            cp "$source_file" "public/img/p${n}.jpg"
+          done
+          rm "$zip_path"
+          rm -rf "$tmp"
+      - name: Commit photos and remove ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/img/p{1,2,3,4,5,6,7,8}.jpg
+          git add -u
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Add gallery photos and remove uploaded ZIP"
+          git push
